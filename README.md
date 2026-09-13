@@ -10,12 +10,22 @@
 ## 复现
 
 ```sh
-npm run check                     # 自检：确定性、种子、CV 两端点、空店零结团
+npm run check                     # 自检：确定性、种子、CV 两端点、空店零结团、复现契约
 npm run sim                       # 六个场景 → data/*.json
 ./.venv/bin/python src/plot.py    # data/ → figures/fig1..6.png
 ```
 
-`npm` 这一步没有任何依赖，Node ≥ 22.6 直接跑 `.ts`。Python 只需要 numpy 和 matplotlib，而且**不含任何物理**——它只读 JSON。时标取自实测：40 座的回转寿司店，传送带一圈约 450 秒。
+上面两条 `npm` 命令**零依赖**，不必 `npm install`，Node ≥ 22.6 直接跑 `.ts`。Python 只需要 numpy 和 matplotlib，而且**不含任何物理**——它只读 JSON。时标取自实测：40 座的回转寿司店，传送带一圈约 450 秒。
+
+本地预览小玩意（用来调参、挑种子）：
+
+```sh
+npm install && npm run play
+```
+
+播放器的参数、种子和当前时刻都写在网址里，例如
+`?k=6&seed=20260830&interval=10&tau=10&loop=450&mins=180&seats=40&t=90`
+就是文章配图那一次开餐的第 90 分钟。`npm run check` 有一条断言保证播放器和文章跑出的是同一段历史。
 
 一句话结论：均匀排布撑不过一顿饭。16 分钟就比「随便乱扔」更不均匀，90 分钟时六把壶挤在圆周 2% 的弧段里。
 

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>回转带上的串车 · 本地预览</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 2rem 1.25rem 4rem;
+        font-family: system-ui, -apple-system, 'PingFang SC', sans-serif;
+        background: #fff;
+      }
+      main {
+        max-width: 980px;
+        margin: 0 auto;
+      }
+      .preview-note {
+        margin: 0 0 1.5rem;
+        padding: 0.6rem 0.9rem;
+        border-left: 3px solid #cbd5e1;
+        color: #64748b;
+        font-size: 0.82rem;
+        line-height: 1.7;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="preview-note">
+        本地预览壳。用途是调参、挑种子、肉眼确认播放器的行为；
+        正式环境里这个组件会挂在博客的「小玩意」页面上。
+        格点扫描不要点页面，走 <code>npm run sim</code>。
+      </p>
+      <div id="app"></div>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

@@ -14,6 +14,8 @@ import { fileURLToPath } from 'node:url';
 
 import {
   DEFAULT_PARAMS,
+  controlCV,
+  controlCVRmsAnalytic,
   gapCV,
   hashSeed,
   load,
@@ -27,6 +29,7 @@ import {
   type SimResult,
   type Summary,
 } from './sim.ts';
+import { toSimParams, type RealWorldSpec } from './units.ts';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(HERE, '..', 'data');
@@ -38,37 +41,35 @@ const DATA_DIR = join(HERE, '..', 'data');
  */
 const LOOP_SECONDS = 450;
 
-/** 秒 → 圈。 */
+/** 本文件里一律用秒/分钟描述场景，换算交给 units.ts，播放器用的是同一份。 */
 const toLoops = (seconds: number): number => seconds / LOOP_SECONDS;
-/** 「平均每 N 秒一次」→ 圈^-1 的速率。 */
-const rateToLoops = (everySeconds: number): number => LOOP_SECONDS / everySeconds;
-/** 圈 → 分钟，出图和打印用。 */
 const toMinutes = (loops: number): number => (loops * LOOP_SECONDS) / 60;
+const spec = (s: Omit<RealWorldSpec, 'loopSeconds'>): Partial<SimParams> =>
+  toSimParams({ loopSeconds: LOOP_SECONDS, ...s });
 
-const MEAL_LOOPS = (90 * 60) / LOOP_SECONDS; // 一顿饭 90 分钟 = 12 圈
-const SERVICE_LOOPS = (180 * 60) / LOOP_SECONDS; // 一个晚市 3 小时 = 24 圈
+const MEAL_LOOPS = toLoops(90 * 60); // 一顿饭 90 分钟 = 12 圈
+const SERVICE_SECONDS = 180 * 60; // 一个晚市 3 小时 = 24 圈
+const SERVICE_LOOPS = toLoops(SERVICE_SECONDS);
 
 /** 场景 A：回转火锅，六把加汤壶。见指导第 3.4 节。 */
-const SCENE_A: Partial<SimParams> = {
+const SCENE_A: Partial<SimParams> = spec({
   seats: 40,
   kettles: 6,
-  occupancy: 1,
-  lambda: rateToLoops(10 * 60), // 每人约每 10 分钟加一次汤
-  tau: toLoops(10), // 倒一次汤约 10 秒
-  duration: SERVICE_LOOPS,
+  demandEverySeconds: 10 * 60, // 每人约每 10 分钟加一次汤
+  tauSeconds: 10, // 倒一次汤约 10 秒
+  durationSeconds: SERVICE_SECONDS,
   frameDt: 0.02,
-};
+});
 
 /** 场景 B：回转寿司，一盒姜片。 */
-const SCENE_B: Partial<SimParams> = {
+const SCENE_B: Partial<SimParams> = spec({
   seats: 40,
   kettles: 1,
-  occupancy: 1,
-  lambda: rateToLoops(15 * 60), // 每人约每 15 分钟想吃一次姜
-  tau: toLoops(5), // 夹一次约 5 秒
-  duration: SERVICE_LOOPS,
+  demandEverySeconds: 15 * 60, // 每人约每 15 分钟想吃一次姜
+  tauSeconds: 5, // 夹一次约 5 秒
+  durationSeconds: SERVICE_SECONDS,
   frameDt: 0.02,
-};
+});
 
 const SEED_A = 20260830;
 const SEED_B = 'ginger-1';
@@ -84,28 +85,6 @@ function write(name: string, payload: unknown): void {
   const file = join(DATA_DIR, `${name}.json`);
   writeFileSync(file, JSON.stringify(payload));
   console.log(`  → data/${name}.json`);
-}
-
-/**
- * 随机重投对照：把 K 个点均匀扔在圆周上，多次取平均。
- * 这是图上那条「随机也像扎堆」的参考线，用均值而不是均方根，
- * 因为仿真曲线画的也是逐帧 CV 的典型高度。
- */
-function controlCV(k: number, samples = 4000, seed: string = 'control'): number {
-  if (k < 2) return NaN;
-  const rand = mulberry32(hashSeed(seed));
-  let acc = 0;
-  for (let i = 0; i < samples; i++) acc += randomGapCV(k, rand);
-  return acc / samples;
-}
-
-/**
- * 折断棍子的解析值。K 个均匀随机点的间距是 Dirichlet(1,…,1)，
- * 于是 E[CV²] = (K-1)/(K+1)，即 CV 的均方根为 sqrt((K-1)/(K+1))。
- * 注意这是均方根，按 Jensen 不等式它略高于 CV 的均值；K→∞ 时两者都趋近 1。
- */
-function controlCVRmsAnalytic(k: number): number {
-  return k < 2 ? NaN : Math.sqrt((k - 1) / (k + 1));
 }
 
 function meta(r: SimResult, s: Summary) {
@@ -270,21 +249,22 @@ function runSweepK(): void {
 function runTimeToBunch(): void {
   const intervalsMin = [2, 3, 5, 8, 10, 15, 20, 30, 45, 60, 90, 120];
   const tauSeconds = [5, 10, 20];
-  const duration = (8 * 3600) / LOOP_SECONDS; // 8 小时
+  const durationSeconds = 8 * 3600; // 放宽到 8 小时，让最冷清的几档也有机会越过阈值
 
   const series = tauSeconds.map((ts) => {
     const rows = intervalsMin.map((mins) => {
-      const base = {
-        ...SCENE_A,
-        lambda: rateToLoops(mins * 60),
-        tau: toLoops(ts),
-        duration,
+      const base = spec({
+        seats: 40,
+        kettles: 6,
+        demandEverySeconds: mins * 60,
+        tauSeconds: ts,
+        durationSeconds,
         frameDt: 0.02,
-      };
+      });
       const e = ensemble(base, SWEEP_SEEDS);
       return {
         demandIntervalMinutes: mins,
-        lambda: round(rateToLoops(mins * 60), 4),
+        lambda: round(base.lambda!, 4),
         rho: round(load({ ...DEFAULT_PARAMS, ...base } as SimParams), 4),
         ...e,
       };
@@ -312,7 +292,7 @@ function runTimeToBunch(): void {
 function runReset(): void {
   const periodsMin = [0, 60, 30, 20, 10, 5];
   const rows = periodsMin.map((mins) => {
-    const p = mins === 0 ? 0 : (mins * 60) / LOOP_SECONDS;
+    const p = toLoops(mins * 60);
     const base = { ...SCENE_A, resetPeriod: p };
     const e = ensemble(base, SWEEP_SEEDS);
     console.log(
@@ -387,6 +367,51 @@ function selfCheck(): void {
   if (maxIdleCV > 1e-12) throw new Error(`λ=0 时 CV 应恒为 0，最大值却是 ${maxIdleCV}`);
   if (Number.isFinite(timeToBunching(idle, 0.5))) {
     throw new Error('λ=0 时不该达到半程结团');
+  }
+
+  // 换算契约：文章和小玩意共用 units.ts，所以同一组现实单位必须给出
+  // 逐位相同的无量纲参数。这条一旦破，读者拿文章里的种子会复现不出配图。
+  const viaUnits = toSimParams({
+    loopSeconds: 450,
+    seats: 40,
+    kettles: 6,
+    demandEverySeconds: 600,
+    tauSeconds: 10,
+    durationSeconds: 10800,
+    frameDt: 0.02,
+  });
+  if (viaUnits.lambda !== 0.75 || viaUnits.tau !== 10 / 450 || viaUnits.duration !== 24) {
+    throw new Error(
+      `units.ts 换算漂移：λ=${viaUnits.lambda} τ=${viaUnits.tau} 时长=${viaUnits.duration}`,
+    );
+  }
+  for (const key of ['lambda', 'tau', 'duration', 'seats', 'kettles'] as const) {
+    if (SCENE_A[key] !== viaUnits[key]) {
+      throw new Error(`场景 A 的 ${key} 与 units.ts 的换算不一致`);
+    }
+  }
+
+  // 复现契约：播放器用字符串种子、并按目标帧数自算 frameDt；这两点都不应
+  // 改变历史。读者拿文章图注里的种子，必须在小玩意里看到同一段开餐。
+  const playerParams = toSimParams({
+    loopSeconds: LOOP_SECONDS,
+    seats: 40,
+    kettles: 6,
+    demandEverySeconds: 10 * 60,
+    tauSeconds: 10,
+    durationSeconds: SERVICE_SECONDS,
+    targetFrames: 2400,
+  });
+  if (playerParams.frameDt === SCENE_A.frameDt) {
+    throw new Error('这条断言本想验证「帧密度不同也复现」，但两者帧密度相同，没测到东西');
+  }
+  const fromPlayer = simulate(playerParams, String(SEED_A));
+  const fromArticle = simulate(SCENE_A, SEED_A);
+  if (JSON.stringify(fromPlayer.waits) !== JSON.stringify(fromArticle.waits)) {
+    throw new Error('播放器与文章的历史不一致：等待序列不同');
+  }
+  if (JSON.stringify(fromPlayer.servedBySeat) !== JSON.stringify(fromArticle.servedBySeat)) {
+    throw new Error('播放器与文章的历史不一致：每座服务次数不同');
   }
 
   // 结团时间必须随阈值单调：到九成不可能早于到半程。

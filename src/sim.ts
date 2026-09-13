@@ -595,6 +595,35 @@ export function summarize(r: SimResult, tailFraction = 0.5): Summary {
 }
 
 /**
+ * 随机重投对照：把 K 个点均匀扔在圆周上，多次取平均。
+ * 这是「随机也像扎堆」那条参考线——越过它，才算比随便乱扔更不均匀。
+ * 用均值而不是均方根，因为要比的是逐帧 CV 的典型高度。
+ *
+ * 出文章数据的 cli.ts 和小玩意播放器都用这一份，所以两边的参考线必然一致。
+ */
+export function controlCV(k: number, samples = 4000, seed: Seed = 'control'): number {
+  if (k < 2) return NaN;
+  const rand = mulberry32(hashSeed(seed));
+  let acc = 0;
+  for (let i = 0; i < samples; i++) acc += randomGapCV(k, rand);
+  return acc / samples;
+}
+
+/** 同上，但已归一化到 [0,1]，可跨 K 比较。 */
+export function controlBunching(k: number): number {
+  return controlCV(k) / maxGapCV(k);
+}
+
+/**
+ * 折断棍子的解析值。K 个均匀随机点的间距是 Dirichlet(1,…,1)，
+ * 于是 E[CV²] = (K-1)/(K+1)，即 CV 的均方根为 sqrt((K-1)/(K+1))。
+ * 注意这是均方根，按 Jensen 不等式它略高于 CV 的均值；K→∞ 时两者都趋近 1。
+ */
+export function controlCVRmsAnalytic(k: number): number {
+  return k < 2 ? NaN : Math.sqrt((k - 1) / (k + 1));
+}
+
+/**
  * 首次达到指定结团程度的时刻，单位「圈」；始终没到则返回 NaN。
  * level 用归一化结团指数（0 = 均匀，1 = 全挤成一点），因而可跨 K 比较。
  *

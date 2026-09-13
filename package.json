@@ -6,7 +6,19 @@
   "description": "回转带上的串车：唯一模拟核与批处理",
   "scripts": {
     "sim": "node --experimental-strip-types --no-warnings src/cli.ts",
-    "check": "node --experimental-strip-types --no-warnings src/cli.ts check"
+    "check": "node --experimental-strip-types --no-warnings src/cli.ts check",
+    "play": "vite",
+    "play:build": "vue-tsc --noEmit -p tsconfig.json && vite build"
+  },
+  "//devDependencies": "只有本地预览播放器（npm run play）才需要装。出文章数据的 npm run sim / check 是零依赖的，不必 npm install。",
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "element-plus": "^2.9.3",
+    "vite": "^6.0.11",
+    "typescript": "~5.9.0",
+    "vue": "^3.5.13",
+    "vue-tsc": "^3.3.11"
   },
   "engines": {
     "node": ">=22.6"

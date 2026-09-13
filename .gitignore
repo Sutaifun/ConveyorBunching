@@ -4,6 +4,7 @@ node_modules/
 .DS_Store
 
 .mplcache/
+.preview/
 
 # 仿真中间产物，`npm run sim` 几秒即可重新生成
 data/

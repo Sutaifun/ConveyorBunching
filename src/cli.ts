@@ -22,6 +22,7 @@ import {
   randomGapCV,
   simulate,
   summarize,
+  timeToBunching,
   type SimParams,
   type SimResult,
   type Summary,
@@ -30,17 +31,32 @@ import {
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = join(HERE, '..', 'data');
 
-/** 场景 A 的默认参数，见指导第 3.4 节。空载一圈 = 100 秒。 */
-const LOOP_SECONDS = 100;
+/**
+ * 空载转一圈的秒数。40 座的回转寿司店实测约 7.5 分钟（2026-08-29 现场观察）；
+ * 若带长约 40 m 则合 8.9 cm/s，正落在回转寿司常见的 6–10 cm/s 区间。
+ * 回转火锅的带速没有实测，暂借用同一值，见指导第 3.4 节。
+ */
+const LOOP_SECONDS = 450;
 
+/** 秒 → 圈。 */
+const toLoops = (seconds: number): number => seconds / LOOP_SECONDS;
+/** 「平均每 N 秒一次」→ 圈^-1 的速率。 */
+const rateToLoops = (everySeconds: number): number => LOOP_SECONDS / everySeconds;
+/** 圈 → 分钟，出图和打印用。 */
+const toMinutes = (loops: number): number => (loops * LOOP_SECONDS) / 60;
+
+const MEAL_LOOPS = (90 * 60) / LOOP_SECONDS; // 一顿饭 90 分钟 = 12 圈
+const SERVICE_LOOPS = (180 * 60) / LOOP_SECONDS; // 一个晚市 3 小时 = 24 圈
+
+/** 场景 A：回转火锅，六把加汤壶。见指导第 3.4 节。 */
 const SCENE_A: Partial<SimParams> = {
   seats: 40,
   kettles: 6,
   occupancy: 1,
-  lambda: 0.17, // 每人约每 10 分钟加一次汤
-  tau: 0.1, // 倒一次汤约 10 秒
-  duration: 240, // 约 6.7 小时；足够看清结团长成
-  frameDt: 0.05,
+  lambda: rateToLoops(10 * 60), // 每人约每 10 分钟加一次汤
+  tau: toLoops(10), // 倒一次汤约 10 秒
+  duration: SERVICE_LOOPS,
+  frameDt: 0.02,
 };
 
 /** 场景 B：回转寿司，一盒姜片。 */
@@ -48,10 +64,10 @@ const SCENE_B: Partial<SimParams> = {
   seats: 40,
   kettles: 1,
   occupancy: 1,
-  lambda: 0.06,
-  tau: 0.03,
-  duration: 240,
-  frameDt: 0.05,
+  lambda: rateToLoops(15 * 60), // 每人约每 15 分钟想吃一次姜
+  tau: toLoops(5), // 夹一次约 5 秒
+  duration: SERVICE_LOOPS,
+  frameDt: 0.02,
 };
 
 const SEED_A = 20260830;
@@ -94,15 +110,22 @@ function controlCVRmsAnalytic(k: number): number {
 
 function meta(r: SimResult, s: Summary) {
   const occ = r.occupied.filter(Boolean).length;
+  const k = r.params.kettles;
+  const ctrl = controlCV(k);
+  // 「越过随机线」用归一化后的对照高度作阈值，才能跨 K 比较。
+  const ctrlLevel = ctrl / maxGapCV(k);
   return {
     params: r.params,
     seed: r.seed,
     loopSeconds: LOOP_SECONDS,
+    mealLoops: MEAL_LOOPS,
+    serviceLoops: SERVICE_LOOPS,
     occupiedSeats: occ,
     rho: round(load(r.params, occ), 4),
-    controlCV: round(controlCV(r.params.kettles), 4),
-    controlCVRmsAnalytic: round(controlCVRmsAnalytic(r.params.kettles), 4),
-    maxCV: round(maxGapCV(r.params.kettles), 4),
+    controlCV: round(ctrl, 4),
+    controlCVRmsAnalytic: round(controlCVRmsAnalytic(k), 4),
+    controlBunching: round(ctrlLevel, 4),
+    maxCV: round(maxGapCV(k), 4),
     summary: {
       steadyCV: round(s.steadyCV, 4),
       steadyBunching: round(s.steadyBunching, 4),
@@ -110,9 +133,13 @@ function meta(r: SimResult, s: Summary) {
       meanWait: round(s.meanWait, 4),
       meanWaitSeconds: round(s.meanWait * LOOP_SECONDS, 2),
       p90Wait: round(s.p90Wait, 4),
+      p90WaitSeconds: round(s.p90Wait * LOOP_SECONDS, 2),
       served: s.served,
       droppedDemands: s.droppedDemands,
       useImbalance: round(s.useImbalance, 3),
+      crossControlMinutes: round(toMinutes(timeToBunching(r, ctrlLevel)), 2),
+      halfMinutes: round(toMinutes(timeToBunching(r, 0.5)), 2),
+      ninetyMinutes: round(toMinutes(timeToBunching(r, 0.9)), 2),
     },
   };
 }
@@ -143,19 +170,36 @@ function runScene(name: string, base: Partial<SimParams>, seed: number | string)
 }
 
 /** 多种子平均，给扫描曲线降噪。 */
+const mean = (a: number[]): number =>
+  a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN;
+
 function ensemble(base: Partial<SimParams>, seeds: Array<number | string>) {
   const cvs: number[] = [];
   const bunch: number[] = [];
   const waits: number[] = [];
   const imbalances: number[] = [];
+  const tHalf: number[] = [];
+  const tCtrl: number[] = [];
+  let neverHalf = 0;
+
+  const k = base.kettles ?? DEFAULT_PARAMS.kettles;
+  const ctrlLevel = controlCV(k) / maxGapCV(k);
+
   for (const seed of seeds) {
-    const s = summarize(simulate(base, seed));
+    const r = simulate(base, seed);
+    const s = summarize(r);
     if (Number.isFinite(s.steadyCV)) cvs.push(s.steadyCV);
     if (Number.isFinite(s.steadyBunching)) bunch.push(s.steadyBunching);
     if (Number.isFinite(s.meanWait)) waits.push(s.meanWait);
     imbalances.push(s.useImbalance);
+
+    const th = timeToBunching(r, 0.5);
+    if (Number.isFinite(th)) tHalf.push(th);
+    else neverHalf += 1;
+    const tc = timeToBunching(r, ctrlLevel);
+    if (Number.isFinite(tc)) tCtrl.push(tc);
   }
-  const mean = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
+
   const cvMean = mean(cvs);
   return {
     steadyCV: round(cvMean, 4),
@@ -169,6 +213,10 @@ function ensemble(base: Partial<SimParams>, seeds: Array<number | string>) {
     meanWait: round(mean(waits), 4),
     meanWaitSeconds: round(mean(waits) * LOOP_SECONDS, 2),
     useImbalance: round(mean(imbalances), 3),
+    halfMinutes: round(toMinutes(mean(tHalf)), 2),
+    crossControlMinutes: round(toMinutes(mean(tCtrl)), 2),
+    /** 有多少个种子在整段模拟里都没到半程；>0 时上面的均值是有偏的。 */
+    neverReachedHalf: neverHalf,
   };
 }
 
@@ -209,46 +257,69 @@ function runSweepK(): void {
   write('sweep-k', { base: SCENE_A, seeds: SWEEP_SEEDS, loopSeconds: LOOP_SECONDS, rows, traces });
 }
 
-/** 负荷扫描：需求多勤、倒汤多慢，才会挤成一坨。 */
-function runSweepLoad(): void {
-  const lambdas = [0.02, 0.04, 0.06, 0.09, 0.12, 0.17, 0.24, 0.34, 0.48, 0.68];
-  const taus = [0.05, 0.1, 0.2];
-  const series = taus.map((tau) => ({
-    tau,
-    tauSeconds: round(tau * LOOP_SECONDS, 1),
-    rows: lambdas.map((lambda) => {
-      const base = { ...SCENE_A, lambda, tau };
+/**
+ * 「多久才结团」扫描。
+ *
+ * 取代早先那张「稳态 CV 对 λ」的图：稳态 CV 对需求率几乎不敏感，
+ * 因为聚团态是任何正需求率下的吸引子。需求率决定的是 **多快到**。
+ * 所以横轴用读者能体会的「平均每隔几分钟加一次汤」，纵轴用到达时间（分钟）。
+ *
+ * 时长放宽到 8 小时，好让最冷清的那几档也有机会越过阈值；
+ * 仍会在图上标出「一顿饭 90 分钟」这条线。
+ */
+function runTimeToBunch(): void {
+  const intervalsMin = [2, 3, 5, 8, 10, 15, 20, 30, 45, 60, 90, 120];
+  const tauSeconds = [5, 10, 20];
+  const duration = (8 * 3600) / LOOP_SECONDS; // 8 小时
+
+  const series = tauSeconds.map((ts) => {
+    const rows = intervalsMin.map((mins) => {
+      const base = {
+        ...SCENE_A,
+        lambda: rateToLoops(mins * 60),
+        tau: toLoops(ts),
+        duration,
+        frameDt: 0.02,
+      };
       const e = ensemble(base, SWEEP_SEEDS);
       return {
-        lambda,
+        demandIntervalMinutes: mins,
+        lambda: round(rateToLoops(mins * 60), 4),
         rho: round(load({ ...DEFAULT_PARAMS, ...base } as SimParams), 4),
         ...e,
       };
-    }),
-  }));
-  for (const s of series) {
-    const desc = s.rows.map((r) => `${r.rho}:${r.steadyCV}`).join('  ');
-    console.log(`  τ=${s.tauSeconds}s  ρ:CV = ${desc}`);
-  }
-  write('sweep-load', {
+    });
+    const desc = rows
+      .map((r) => `${r.demandIntervalMinutes}分→${Number.isFinite(r.halfMinutes) ? `${r.halfMinutes}分` : '未到'}`)
+      .join('  ');
+    console.log(`  倒汤 ${ts}s：加汤间隔→结团半程用时  ${desc}`);
+    return { tauSeconds: ts, tau: round(toLoops(ts), 5), rows };
+  });
+
+  write('time-to-bunch', {
     base: SCENE_A,
     seeds: SWEEP_SEEDS,
     loopSeconds: LOOP_SECONDS,
+    mealMinutes: 90,
+    durationHours: 8,
     controlCV: round(controlCV(SCENE_A.kettles!), 4),
+    controlBunching: round(controlCV(SCENE_A.kettles!) / maxGapCV(SCENE_A.kettles!), 4),
     series,
   });
 }
 
-/** 服务员巡台：定期把壶重新摊开，能压回多少。 */
+/** 服务员巡台：定期把壶重新摊开，能压回多少。周期按分钟给，便于正文引用。 */
 function runReset(): void {
-  const periods = [0, 60, 30, 15, 8];
-  const rows = periods.map((p) => {
+  const periodsMin = [0, 60, 30, 20, 10, 5];
+  const rows = periodsMin.map((mins) => {
+    const p = mins === 0 ? 0 : (mins * 60) / LOOP_SECONDS;
     const base = { ...SCENE_A, resetPeriod: p };
     const e = ensemble(base, SWEEP_SEEDS);
     console.log(
-      `  重整周期=${p === 0 ? '不重整' : `${p} 圈`} steadyCV=${e.steadyCV} 等待=${e.meanWaitSeconds}s`,
+      `  ${mins === 0 ? '不重整   ' : `每 ${String(mins).padStart(2)} 分钟`} ` +
+        `结团指数=${e.steadyBunching} 平均等待=${e.meanWaitSeconds}s`,
     );
-    return { resetPeriod: p, resetSeconds: p * LOOP_SECONDS, ...e };
+    return { resetMinutes: mins, resetPeriod: round(p, 4), ...e };
   });
   write('reset', {
     base: SCENE_A,
@@ -297,9 +368,33 @@ function selfCheck(): void {
     throw new Error('换种子结果没变，种子没接上随机流');
   }
 
-  // 均匀分布的 CV 应为 0。
+  // 两个端点：均匀排布的 CV 是 0，全挤在一点是 sqrt(K-1)。
   const uniform = gapCV([0, 0.25, 0.5, 0.75]);
   if (Math.abs(uniform) > 1e-12) throw new Error(`均匀排布的 CV 应为 0，得到 ${uniform}`);
+  const clumped = gapCV([0.3, 0.3, 0.3, 0.3, 0.3, 0.3]);
+  if (Math.abs(clumped - maxGapCV(6)) > 1e-9) {
+    throw new Error(`全挤一点的 CV 应为 ${maxGapCV(6)}，得到 ${clumped}`);
+  }
+
+  // 没有需求就不该有结团。这条挡住「核凭空造出聚集」这类最难发现的错。
+  // 用空店（occupancy=0）而不是极小的 λ：前者确定地产生零需求，后者只是概率上如此。
+  const idle = simulate({ ...SCENE_A, occupancy: 0, duration: 20 }, 'check-idle');
+  const idleSummary = summarize(idle);
+  if (idleSummary.served !== 0) {
+    throw new Error(`λ=0 时不该有任何服务，得到 ${idleSummary.served} 次`);
+  }
+  const maxIdleCV = Math.max(...idle.gapCV);
+  if (maxIdleCV > 1e-12) throw new Error(`λ=0 时 CV 应恒为 0，最大值却是 ${maxIdleCV}`);
+  if (Number.isFinite(timeToBunching(idle, 0.5))) {
+    throw new Error('λ=0 时不该达到半程结团');
+  }
+
+  // 结团时间必须随阈值单调：到九成不可能早于到半程。
+  const tHalf = timeToBunching(a, 0.5);
+  const tNinety = timeToBunching(a, 0.9);
+  if (Number.isFinite(tNinety) && !(tNinety >= tHalf)) {
+    throw new Error(`结团时间非单调：半程 ${tHalf} 圈，九成 ${tNinety} 圈`);
+  }
 
   // 折断棍子：经验均方根应贴近解析值 sqrt((K-1)/(K+1))。
   const k = 6;
@@ -330,7 +425,7 @@ const SCENES: Record<string, () => void> = {
   },
   ginger: runGinger,
   'sweep-k': runSweepK,
-  'sweep-load': runSweepLoad,
+  'time-to-bunch': runTimeToBunch,
   reset: runReset,
 };
 

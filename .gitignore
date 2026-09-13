@@ -3,5 +3,9 @@ __pycache__/
 node_modules/
 .DS_Store
 
+.mplcache/
+
 # 仿真中间产物，`npm run sim` 几秒即可重新生成
 data/
+
+# figures/ 不忽略：它是小品的配图，值得能在 GitHub 上直接看到

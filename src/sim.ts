@@ -594,6 +594,23 @@ export function summarize(r: SimResult, tailFraction = 0.5): Summary {
   };
 }
 
+/**
+ * 首次达到指定结团程度的时刻，单位「圈」；始终没到则返回 NaN。
+ * level 用归一化结团指数（0 = 均匀，1 = 全挤成一点），因而可跨 K 比较。
+ *
+ * 这是比「稳态 CV」更有用的量：聚团态几乎是任何正需求率下的吸引子，
+ * 需求率决定的是多久到，而不是会不会到。
+ */
+export function timeToBunching(r: SimResult, level: number): number {
+  const ceiling = maxGapCV(r.params.kettles);
+  if (!Number.isFinite(ceiling)) return NaN;
+  const target = level * ceiling;
+  for (let i = 0; i < r.gapCV.length; i++) {
+    if (r.gapCV[i] > target) return r.times[i];
+  }
+  return NaN;
+}
+
 /** 便于解释的负荷参数 ρ = (在座人数 × λ × τ) / K。 */
 export function load(params: SimParams, occupiedCount?: number): number {
   const occ = occupiedCount ?? Math.round(params.seats * params.occupancy);

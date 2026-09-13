@@ -1,0 +1,14 @@
+{
+  "name": "conveyor-bunching",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "回转带上的串车：唯一模拟核与批处理",
+  "scripts": {
+    "sim": "node --experimental-strip-types --no-warnings src/cli.ts",
+    "check": "node --experimental-strip-types --no-warnings src/cli.ts check"
+  },
+  "engines": {
+    "node": ">=22.6"
+  }
+}

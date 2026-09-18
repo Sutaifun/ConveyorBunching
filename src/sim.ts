@@ -106,6 +106,8 @@ export interface SimResult {
   positions: number[][];
   /** states[frame][kettle]，见 KettleState。 */
   states: KettleState[][];
+  /** pendingBySeat[frame][seat]，该帧时该座位是否有待服务需求。 */
+  pendingBySeat: boolean[][];
   /** 每帧的间距变异系数 CV = σ/μ；K < 2 时为 NaN。 */
   gapCV: number[];
   /** 每次「从产生需求到拿到物件」的等待时长。 */
@@ -378,6 +380,7 @@ export function simulate(userParams: Partial<SimParams>, seed: Seed): SimResult 
   const times: number[] = [];
   const positions: number[][] = [];
   const states: KettleState[][] = [];
+  const pendingSnapshots: boolean[][] = [];
   const gapCVs: number[] = [];
 
   function posAt(k: number, t: number): number {
@@ -395,6 +398,7 @@ export function simulate(userParams: Partial<SimParams>, seed: Seed): SimResult 
     times.push(t);
     positions.push(pos);
     states.push(st);
+    pendingSnapshots.push([...pending]);
     gapCVs.push(gapCV(pos));
   }
 
@@ -532,6 +536,7 @@ export function simulate(userParams: Partial<SimParams>, seed: Seed): SimResult 
     times,
     positions,
     states,
+    pendingBySeat: pendingSnapshots,
     gapCV: gapCVs,
     waits,
     waitTimes,

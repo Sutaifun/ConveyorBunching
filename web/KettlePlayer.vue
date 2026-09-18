@@ -308,16 +308,18 @@ function draw(): void {
   ctx.arc(cx, cy, R, 0, 2 * Math.PI);
   ctx.stroke();
 
-  // 座位刻度；原点那一格标成厨房窗口
+  // 座位刻度；原点那一格标成厨房窗口；有待服务需求的座位用紫色标记
   const M = r.params.seats;
+  const pendingNow = r.pendingBySeat[c.i];
   for (let j = 0; j < M; j++) {
     const a = angleOf(j / M);
     const origin = j === 0;
-    ctx.strokeStyle = origin ? '#16a34a' : '#cbd5e1';
-    ctx.lineWidth = origin ? 2.5 : 1;
+    const hasPending = pendingNow[j];
+    ctx.strokeStyle = origin ? '#16a34a' : hasPending ? '#9333ea' : '#cbd5e1';
+    ctx.lineWidth = origin ? 2.5 : hasPending ? 2.5 : 1;
     ctx.beginPath();
     ctx.moveTo(cx + Math.cos(a) * (R + 9), cy + Math.sin(a) * (R + 9));
-    ctx.lineTo(cx + Math.cos(a) * (R + (origin ? 22 : 16)), cy + Math.sin(a) * (R + (origin ? 22 : 16)));
+    ctx.lineTo(cx + Math.cos(a) * (R + (origin ? 22 : hasPending ? 20 : 16)), cy + Math.sin(a) * (R + (origin ? 22 : hasPending ? 20 : 16)));
     ctx.stroke();
   }
 
@@ -440,6 +442,7 @@ watch(speed, () => {
           <li><i class="dot dot--belt" />在带上</li>
           <li><i class="dot dot--held" />正被客人拿着</li>
           <li><i class="dot dot--origin" />原点（厨房窗口）</li>
+          <li><i class="tick tick--pending" />有待服务需求</li>
         </ul>
 
         <div class="kp__timeline">
@@ -623,6 +626,14 @@ watch(speed, () => {
 }
 .dot--origin {
   background: #16a34a;
+}
+.tick {
+  width: 3px;
+  height: 12px;
+  border-radius: 1px;
+}
+.tick--pending {
+  background: #9333ea;
 }
 .kp__clock {
   display: flex;

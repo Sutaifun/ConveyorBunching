@@ -189,6 +189,7 @@ def fig_spacetime() -> None:
 
 
 def fig_bunching() -> None:
+    # 场景 A、单一种子（入库图是 20260830）。不要把它读成 fig3 在 10 分钟档的 8 种子均值。
     d = load("scene-a")
     loop = d["loopSeconds"]
     t = minutes(d["times"], loop)
@@ -235,8 +236,8 @@ def fig_bunching() -> None:
     ax.set_ylabel(L("结团指数（0 = 均匀，1 = 全挤成一坨）", "bunching index"))
     ax.set_title(
         L(
-            "均匀排布撑不过一顿饭：16 分钟越过「随便乱扔」，25 分钟走完一半，一小时基本到顶",
-            "evenly spaced does not survive one meal",
+            f"种子 {d['seed']} 这一次：16 分钟越过「随便乱扔」，半程首次约在 25 分钟",
+            f"seed {d['seed']}, one run: past random at 16 min, half first crossed near 25",
         ),
         loc="left",
     )
@@ -247,6 +248,8 @@ def fig_bunching() -> None:
 
 
 def fig_time_to_bunch() -> None:
+    # 种子 1–8 的均值。halfMinutes 在 neverReachedHalf>0 时丢掉没到的种子，冷清端偏快。
+    # 这里不改纵轴数值（18 / 281 等 neverReachedHalf=0 的点保持原样），只标出未到个数。
     d = load("time-to-bunch")
     fig, ax = plt.subplots(figsize=(9.5, 5.2))
 
@@ -265,6 +268,18 @@ def fig_time_to_bunch() -> None:
             color=color,
             label=L(f"倒一次汤 {s['tauSeconds']} 秒", f"pour {s['tauSeconds']}s"),
         )
+        for r in rows:
+            n = int(r.get("neverReachedHalf") or 0)
+            if n <= 0:
+                continue
+            ax.annotate(
+                L(f"{n}个未到", f"{n} never"),
+                (r["demandIntervalMinutes"], r["halfMinutes"]),
+                textcoords="offset points",
+                xytext=(5, 3),
+                fontsize=8,
+                color=color,
+            )
 
     meal = d["mealMinutes"]
     ax.axhline(meal, color=C_MEAL, ls="--", lw=1.2)
@@ -285,11 +300,11 @@ def fig_time_to_bunch() -> None:
     ax.set_yticks([10, 20, 50, 100, 200, 400])
     ax.get_yaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
     ax.set_xlabel(L("每人平均多久加一次汤（分钟）", "minutes between refills per person"))
-    ax.set_ylabel(L("结团走完一半所需时间（分钟）", "minutes to reach half bunching"))
+    ax.set_ylabel(L("到半程的时间（分钟；未到的种子不计入）", "minutes to half (seeds that never arrive omitted)"))
     ax.set_title(
         L(
-            "需求快慢只决定「多久挤好」，不决定「会不会挤」",
-            "demand rate sets how fast, not whether",
+            "倒汤 10 秒时 8 小时内都越过半程，但越闲越慢；未到的种子不进均值",
+            "10s pour: all cross half within 8h, slower when idle; no-shows dropped",
         ),
         loc="left",
     )
@@ -301,6 +316,7 @@ def fig_time_to_bunch() -> None:
 
 
 def fig_kettle_count() -> None:
+    # 种子 1–8 的均值，不是 fig2 那一次开餐。
     d = load("sweep-k")
     rows = [r for r in d["rows"] if r["kettles"] >= 2]
     k = [r["kettles"] for r in rows]
@@ -385,8 +401,9 @@ def fig_ginger() -> None:
         loc="left",
     )
 
-    # 右：热座效应到底有没有空间范围。
-    # 答案是没有——增量只在热座本身，隔一桌就归零。这是「一件物品不会结团」的对照。
+    # 右：热座有没有连成一片的空间尾巴。
+    # 相邻（环距离 1）增量为 0；更远只有 ±5 秒量级，没有随距离衰减的一整片。
+    # 热座本身约 +40 秒。这是「一件物品不会结团」的对照。
     hot = sk["hotSeat"]
     n = len(sk["heldTimeBySeat"])
     uni = np.asarray(sk["uniformHeldTimeBySeat"]) * loop
@@ -403,7 +420,10 @@ def fig_ginger() -> None:
     ax2.set_xlabel(L("到「爱吃姜那桌」的距离（几个座位）", "seats away from the hot seat"))
     ax2.set_ylabel(L("停留时长的增量（秒）", "extra dwell time (s)"))
     ax2.set_title(
-        L("热座效应没有空间范围：隔一桌就归零", "the hot seat effect has no spatial reach"),
+        L(
+            "相邻增量为 0；更远只有 ±5 秒，没有连成一片的空间尾巴",
+            "neighbors unchanged; farther seats only ±5 s, no spatial tail",
+        ),
         loc="left",
     )
     ax2.annotate(
@@ -431,6 +451,7 @@ def fig_ginger() -> None:
 
 
 def fig_reset() -> None:
+    # 种子 1–8 的后一半均值。238 秒不是播放器 t=90 的累计等待。
     d = load("reset")
     rows = d["rows"]
     labels = [

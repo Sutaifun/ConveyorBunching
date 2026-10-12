@@ -75,14 +75,21 @@ export interface SimParams {
   refillExclusive?: boolean;
 }
 
+/**
+ * 与指导第 3.4 节、`cli.ts` 场景 A 的旗舰换算一致（一圈 450 秒）。
+ * λ = 450/600 = 0.75 圈⁻¹，τ = 10/450 圈，时长 = 一个晚市 3 小时 = 24 圈，
+ * 帧间隔与场景 A 同为 0.02。文章路径仍显式传入 `SCENE_A`，不靠漏传参数碰运气；
+ * `npm run check` 断言这里的 λ、τ、时长（以及座位、壶数、上座、帧间隔）等于
+ * `toSimParams` 的旗舰换算。这只改默认世界，不改事件循环。
+ */
 export const DEFAULT_PARAMS: SimParams = {
   seats: 40,
   kettles: 6,
   occupancy: 1,
-  lambda: 0.17,
-  tau: 0.1,
-  duration: 200,
-  frameDt: 0.05,
+  lambda: 450 / 600,
+  tau: 10 / 450,
+  duration: (180 * 60) / 450,
+  frameDt: 0.02,
   capacityEnabled: false,
   capacity: 10,
   refillThreshold: 0.4,

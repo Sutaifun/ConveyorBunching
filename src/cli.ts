@@ -239,12 +239,15 @@ function runSweepK(): void {
 /**
  * 「多久才结团」扫描。
  *
- * 取代早先那张「稳态 CV 对 λ」的图：稳态 CV 对需求率几乎不敏感，
- * 因为聚团态是任何正需求率下的吸引子。需求率决定的是 **多快到**。
- * 所以横轴用读者能体会的「平均每隔几分钟加一次汤」，纵轴用到达时间（分钟）。
+ * 横轴是「平均每隔几分钟加一次汤」，纵轴是到达半程的时间（分钟）。
+ * 倒汤 10 秒、8 小时内，间隔 2→120 分钟时 8 个种子都越过半程，
+ * 但后一半结团指数随间隔变稀而下降，不是同一个终点。
+ * 一顿饭内能不能到半程，还要看忙闲。
  *
- * 时长放宽到 8 小时，好让最冷清的那几档也有机会越过阈值；
+ * 时长放宽到 8 小时，好让较冷清的档也有机会越过阈值；
  * 仍会在图上标出「一顿饭 90 分钟」这条线。
+ * `halfMinutes` 在 `neverReachedHalf` > 0 时只平均到了的种子，冷清端偏快。
+ * 正文引用的 18 / 281 分钟（倒汤 10 秒、间隔 2 与 120 分钟）这两点没有删失。
  */
 function runTimeToBunch(): void {
   const intervalsMin = [2, 3, 5, 8, 10, 15, 20, 30, 45, 60, 90, 120];
@@ -270,7 +273,11 @@ function runTimeToBunch(): void {
       };
     });
     const desc = rows
-      .map((r) => `${r.demandIntervalMinutes}分→${Number.isFinite(r.halfMinutes) ? `${r.halfMinutes}分` : '未到'}`)
+      .map((r) => {
+        const arrived = Number.isFinite(r.halfMinutes) ? `${r.halfMinutes}分` : '未到';
+        const dropped = r.neverReachedHalf > 0 ? `，${r.neverReachedHalf}个未到、均值偏快` : '';
+        return `${r.demandIntervalMinutes}分→${arrived}${dropped}`;
+      })
       .join('  ');
     console.log(`  倒汤 ${ts}s：加汤间隔→结团半程用时  ${desc}`);
     return { tauSeconds: ts, tau: round(toLoops(ts), 5), rows };
@@ -388,6 +395,15 @@ function selfCheck(): void {
   for (const key of ['lambda', 'tau', 'duration', 'seats', 'kettles'] as const) {
     if (SCENE_A[key] !== viaUnits[key]) {
       throw new Error(`场景 A 的 ${key} 与 units.ts 的换算不一致`);
+    }
+  }
+  // 默认参数必须就是旗舰换算，不能留在「约 100 秒一圈」的旧世界上。
+  // 只锁 λ、τ、时长和场景 A 已经写明的座位 / 壶数 / 上座 / 帧间隔，不改扫描路径。
+  for (const key of ['lambda', 'tau', 'duration', 'seats', 'kettles', 'occupancy', 'frameDt'] as const) {
+    if (DEFAULT_PARAMS[key] !== viaUnits[key]) {
+      throw new Error(
+        `DEFAULT_PARAMS.${key}=${DEFAULT_PARAMS[key]} 与旗舰换算 ${viaUnits[key]} 不一致`,
+      );
     }
   }
 

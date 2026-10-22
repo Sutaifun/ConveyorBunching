@@ -16,7 +16,7 @@ npm run sim                       # 六个场景 → data/*.json
 ./.venv/bin/python src/plot.py    # data/ → figures/fig1..6.png
 ```
 
-上面两条 `npm` 命令**零依赖**，不必 `npm install`，Node ≥ 22.6 直接跑 `.ts`。Python 只需要 numpy 和 matplotlib，而且**不含任何物理**——它只读 JSON。时标取自实测：40 座的回转寿司店，传送带一圈约 450 秒。
+上面两条 `npm` 命令**零依赖**，不必 `npm install`，Node ≥ 22.23.4（22.x 安全补丁线；更高的当前 LTS 安全线亦可）直接跑 `.ts`。Python 只需要 numpy 和 matplotlib，而且**不含任何物理**——它只读 JSON。时标取自实测：40 座的回转寿司店，传送带一圈约 450 秒。
 
 本地预览小玩意（用来调参、挑种子）：
 
